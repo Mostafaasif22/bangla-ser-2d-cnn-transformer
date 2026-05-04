@@ -1,0 +1,20 @@
+{
+  "labels": [
+    "Angry",
+    "Happy",
+    "Neutral",
+    "Sad",
+    "Disgusted",
+    "Fearful",
+    "Surprised"
+  ],
+  "label_to_idx": {
+    "Angry": 0,
+    "Happy": 1,
+    "Neutral": 2,
+    "Sad": 3,
+    "Disgusted": 4,
+    "Fearful": 5,
+    "Surprised": 6
+  }
+}

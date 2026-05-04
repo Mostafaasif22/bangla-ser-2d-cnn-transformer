@@ -1,0 +1,50 @@
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Flask
+instance/
+.env
+.flaskenv
+
+# Large files
+*.zip
+*.rar
+*.7z
+
+# FFmpeg local binaries
+ffmpeg*/
+ffmpeg-*/
+
+# Dataset / media files
+data/
+dataset/
+*.wav
+*.mp3
+*.flac
+*.mp4
+
+# Model files
+*.h5
+*.keras
+*.pt
+*.pth
+*.pkl
+*.joblib
+
+# Outputs
+outputs/
+results/
+checkpoints/
+logs/
+
+# System files
+.DS_Store
+Thumbs.db

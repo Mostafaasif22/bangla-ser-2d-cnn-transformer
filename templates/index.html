@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bangla Voice Emotion Detection</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="container">
+    <h1>Bangla Voice Emotion Detection</h1>
+    <p class="subtitle">Record from microphone or upload an audio file, then predict one of 7 emotions.</p>
+
+    <div class="card">
+      <h2>Microphone Recording</h2>
+      <div class="actions">
+        <button id="startBtn">Start Recording</button>
+        <button id="stopBtn" disabled>Stop Recording</button>
+      </div>
+      <p id="status">Status: Idle</p>
+      <audio id="recordedAudio" controls></audio>
+    </div>
+
+    <div class="card">
+      <h2>Upload Audio File</h2>
+      <input type="file" id="fileInput" accept=".wav,.mp3,.m4a,.ogg,.flac,.webm,.mp4" />
+    </div>
+
+    <div class="card">
+      <h2>Prediction</h2>
+      <button id="predictBtn" disabled>Predict Emotion</button>
+      <div id="result" class="hidden">
+        <p><strong>Predicted Emotion:</strong> <span id="emotionText">-</span></p>
+        <p><strong>Confidence:</strong> <span id="confidenceText">-</span></p>
+        <div>
+          <h3>All Class Probabilities</h3>
+          <div id="probList"></div>
+        </div>
+      </div>
+      <div id="errorBox" class="error hidden"></div>
+    </div>
+  </div>
+
+  <script>
+    let mediaRecorder = null;
+    let recordedBlob = null;
+    let selectedFile = null;
+    let stream = null;
+    let chunks = [];
+
+    const startBtn = document.getElementById("startBtn");
+    const stopBtn = document.getElementById("stopBtn");
+    const predictBtn = document.getElementById("predictBtn");
+    const statusEl = document.getElementById("status");
+    const fileInput = document.getElementById("fileInput");
+    const recordedAudio = document.getElementById("recordedAudio");
+    const resultBox = document.getElementById("result");
+    const errorBox = document.getElementById("errorBox");
+    const emotionText = document.getElementById("emotionText");
+    const confidenceText = document.getElementById("confidenceText");
+    const probList = document.getElementById("probList");
+
+    function resetMessages() {
+      errorBox.classList.add("hidden");
+      errorBox.textContent = "";
+      resultBox.classList.add("hidden");
+    }
+
+    function showError(message) {
+      errorBox.textContent = message;
+      errorBox.classList.remove("hidden");
+      console.error(message);
+    }
+
+    function setPredictEnabled() {
+      predictBtn.disabled = !(recordedBlob || selectedFile);
+    }
+
+    function getSupportedMimeType() {
+      const candidates = [
+        "audio/webm;codecs=opus",
+        "audio/webm",
+        "audio/mp4"
+      ];
+
+      for (const type of candidates) {
+        if (window.MediaRecorder && MediaRecorder.isTypeSupported(type)) {
+          return type;
+        }
+      }
+
+      return "";
+    }
+
+    startBtn.addEventListener("click", async () => {
+      resetMessages();
+      selectedFile = null;
+      fileInput.value = "";
+      recordedBlob = null;
+      recordedAudio.removeAttribute("src");
+      recordedAudio.load();
+      chunks = [];
+
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        showError("This browser does not support microphone recording.");
+        return;
+      }
+
+      const host = window.location.hostname;
+      if (host !== "127.0.0.1" && host !== "localhost") {
+        showError("Open this app with http://127.0.0.1:5000 or http://localhost:5000.");
+        return;
+      }
+
+      try {
+        statusEl.textContent = "Status: Requesting microphone permission...";
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+        const mimeType = getSupportedMimeType();
+        mediaRecorder = mimeType
+          ? new MediaRecorder(stream, { mimeType })
+          : new MediaRecorder(stream);
+
+        mediaRecorder.onstart = () => {
+          statusEl.textContent = "Status: Recording...";
+          startBtn.disabled = true;
+          stopBtn.disabled = false;
+        };
+
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data && event.data.size > 0) {
+            chunks.push(event.data);
+          }
+        };
+
+        mediaRecorder.onerror = (event) => {
+          showError("MediaRecorder error: " + (event.error?.message || "Unknown error"));
+        };
+
+        mediaRecorder.onstop = async () => {
+          try {
+            if (!chunks.length) {
+              showError("No audio data was captured.");
+              statusEl.textContent = "Status: No audio recorded";
+              return;
+            }
+
+            const finalMime = mimeType || "audio/webm";
+            recordedBlob = new Blob(chunks, { type: finalMime });
+            const audioURL = URL.createObjectURL(recordedBlob);
+            recordedAudio.src = audioURL;
+            recordedAudio.load();
+
+            statusEl.textContent = "Status: Recording ready";
+            setPredictEnabled();
+
+          } catch (err) {
+            showError("Failed to prepare recorded audio: " + err.message);
+          } finally {
+            if (stream) {
+              stream.getTracks().forEach(track => track.stop());
+              stream = null;
+            }
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+          }
+        };
+
+        mediaRecorder.start(250);
+      } catch (err) {
+        showError("Microphone access failed: " + err.message);
+        statusEl.textContent = "Status: Microphone access failed";
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+      }
+    });
+
+    stopBtn.addEventListener("click", () => {
+      if (mediaRecorder && mediaRecorder.state !== "inactive") {
+        statusEl.textContent = "Status: Stopping recording...";
+        mediaRecorder.stop();
+      }
+    });
+
+    fileInput.addEventListener("change", () => {
+      resetMessages();
+      selectedFile = fileInput.files[0] || null;
+      recordedBlob = null;
+      recordedAudio.removeAttribute("src");
+      recordedAudio.load();
+      statusEl.textContent = selectedFile ? `Status: Selected ${selectedFile.name}` : "Status: Idle";
+      setPredictEnabled();
+    });
+
+    predictBtn.addEventListener("click", async () => {
+      resetMessages();
+      const formData = new FormData();
+
+      if (selectedFile) {
+        formData.append("audio", selectedFile, selectedFile.name);
+      } else if (recordedBlob) {
+        const filename = recordedBlob.type.includes("mp4") ? "recording.mp4" : "recording.webm";
+        formData.append("audio", recordedBlob, filename);
+      } else {
+        showError("Please record or upload an audio file first.");
+        return;
+      }
+
+      statusEl.textContent = "Status: Predicting...";
+      predictBtn.disabled = true;
+
+      try {
+        const response = await fetch("/predict", {
+          method: "POST",
+          body: formData
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || "Prediction failed.");
+        }
+
+        emotionText.textContent = data.predicted_emotion;
+        confidenceText.textContent = data.confidence + "%";
+
+        probList.innerHTML = "";
+        Object.entries(data.probabilities).forEach(([label, value]) => {
+          const row = document.createElement("div");
+          row.className = "prob-row";
+          row.innerHTML = `<span>${label}</span><span>${value}%</span>`;
+          probList.appendChild(row);
+        });
+
+        resultBox.classList.remove("hidden");
+        statusEl.textContent = "Status: Prediction complete";
+      } catch (err) {
+        showError(err.message);
+        statusEl.textContent = "Status: Error";
+      } finally {
+        setPredictEnabled();
+      }
+    });
+  </script>
+</body>
+</html>
